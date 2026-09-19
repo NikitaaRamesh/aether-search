@@ -38,7 +38,12 @@ impl AlignedSignatureBlock {
     /// memory. Reader synchronization is governed downstream by shard sealing
     /// and the `doc_manifest` barrier.
     pub fn set_bit(&self, doc_index: usize) {
-        assert!(doc_index < DOCS_PER_BLOCK, "document index out of bounds");
+        assert!(
+            doc_index < DOCS_PER_BLOCK,
+            "document index {} out of bounds (max {})",
+            doc_index,
+            DOCS_PER_BLOCK - 1
+        );
 
         let array_index = doc_index / BITS_PER_WORD;
         let bit_offset = doc_index % BITS_PER_WORD;
@@ -54,7 +59,8 @@ impl Default for AlignedSignatureBlock {
     }
 }
 
-/// A fixed partition of up to 512 documents in the orthogonal bit-matrix.
+/// A fixed partition of up to [`DOCS_PER_BLOCK`] documents in the orthogonal
+/// bit-matrix.
 ///
 /// Each entry in `rows` is a transposed signature row associated with a term
 /// hash. `doc_manifest` maps shard-local document indices to global repository
@@ -95,7 +101,14 @@ mod tests {
     #[test]
     fn verify_memory_layout() {
         assert_eq!(align_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
-        assert_eq!(size_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
+        assert_eq!(
+            size_of::<AlignedSignatureBlock>(),
+            WORDS_PER_BLOCK * size_of::<std::sync::atomic::AtomicU64>()
+        );
+        assert_eq!(
+            size_of::<AlignedSignatureBlock>() % BLOCK_ALIGNMENT_BYTES,
+            0
+        );
     }
 
     #[test]
@@ -119,13 +132,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "document index out of bounds")]
+    #[should_panic(expected = "document index 512 out of bounds (max 511)")]
     fn set_bit_out_of_bounds_panics() {
-        let beyond_boundary = std::panic::catch_unwind(|| {
-            AlignedSignatureBlock::default().set_bit(DOCS_PER_BLOCK + 10);
-        });
-        assert!(beyond_boundary.is_err());
-
-        AlignedSignatureBlock::default().set_bit(DOCS_PER_BLOCK);
+        let block = AlignedSignatureBlock::default();
+        block.set_bit(DOCS_PER_BLOCK);
     }
 }
