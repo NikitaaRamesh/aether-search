@@ -19,8 +19,10 @@ dependencies = [
  "axum",
  "bytes",
  "hmac",
+ "http-body-util",
  "sha2",
  "tokio",
+ "tower",
 ]
 
 [[package]]

@@ -10,3 +10,7 @@ axum.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 aether-core = { path = "../aether-core" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
