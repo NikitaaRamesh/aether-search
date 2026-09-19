@@ -6,17 +6,42 @@ pub type FastHashMap<K, V> = std::collections::HashMap<K, V, ahash::RandomState>
 pub type Mutex<T> = parking_lot::Mutex<T>;
 pub type ArrayQueue<T> = crossbeam_queue::ArrayQueue<T>;
 
+pub const BITS_PER_WORD: usize = 64;
+pub const WORDS_PER_BLOCK: usize = 8;
+pub const DOCS_PER_BLOCK: usize = BITS_PER_WORD * WORDS_PER_BLOCK;
+pub const BLOCK_ALIGNMENT_BYTES: usize = 64;
+
+/// A 512-bit transposed signature row that fits in one 64-byte L1 cache line.
+///
+/// Each atomic word stores the membership bits for part of a 512-document
+/// shard. The explicit C representation and 64-byte alignment keep adjacent
+/// rows on distinct cache lines, eliminating false sharing between concurrent
+/// worker threads.
+// Rust requires an integer literal in `repr(align)`; the layout test binds it
+// to `BLOCK_ALIGNMENT_BYTES`.
 #[repr(C, align(64))]
 pub struct AlignedSignatureBlock {
-    pub data: [AtomicU64; 8],
+    pub data: [AtomicU64; WORDS_PER_BLOCK],
 }
 
 impl AlignedSignatureBlock {
+    /// Sets the bit associated with a document in this signature row.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `doc_index >= DOCS_PER_BLOCK`.
+    ///
+    /// # Synchronization
+    ///
+    /// `Ordering::Relaxed` is sufficient because individual bit flips are
+    /// commutative, monotonic accumulations that do not publish external
+    /// memory. Reader synchronization is governed downstream by shard sealing
+    /// and the `doc_manifest` barrier.
     pub fn set_bit(&self, doc_index: usize) {
-        assert!(doc_index < 512, "document index must be between 0 and 511");
+        assert!(doc_index < DOCS_PER_BLOCK, "document index out of bounds");
 
-        let array_index = doc_index / 64;
-        let bit_offset = doc_index % 64;
+        let array_index = doc_index / BITS_PER_WORD;
+        let bit_offset = doc_index % BITS_PER_WORD;
         let _ = self.data[array_index].fetch_or(1_u64 << bit_offset, Ordering::Relaxed);
     }
 }
@@ -29,6 +54,12 @@ impl Default for AlignedSignatureBlock {
     }
 }
 
+/// A fixed partition of up to 512 documents in the orthogonal bit-matrix.
+///
+/// Each entry in `rows` is a transposed signature row associated with a term
+/// hash. `doc_manifest` maps shard-local document indices to global repository
+/// or file paths and provides the reader synchronization barrier after shard
+/// sealing. `active_docs` atomically tracks the shard's current occupancy.
 pub struct IndexShard {
     pub rows: Vec<AlignedSignatureBlock>,
     pub doc_manifest: RwLock<Vec<String>>,
@@ -56,12 +87,15 @@ mod tests {
         sync::atomic::Ordering,
     };
 
-    use super::AlignedSignatureBlock;
+    use super::{
+        AlignedSignatureBlock, BITS_PER_WORD, BLOCK_ALIGNMENT_BYTES, DOCS_PER_BLOCK,
+        WORDS_PER_BLOCK,
+    };
 
     #[test]
     fn verify_memory_layout() {
-        assert_eq!(align_of::<AlignedSignatureBlock>(), 64);
-        assert_eq!(size_of::<AlignedSignatureBlock>(), 64);
+        assert_eq!(align_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
+        assert_eq!(size_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
     }
 
     #[test]
@@ -69,15 +103,29 @@ mod tests {
         let block = AlignedSignatureBlock::default();
 
         block.set_bit(0);
-        block.set_bit(63);
-        block.set_bit(64);
-        block.set_bit(511);
+        block.set_bit(BITS_PER_WORD - 1);
+        block.set_bit(BITS_PER_WORD);
+        block.set_bit(DOCS_PER_BLOCK - 1);
 
         assert_eq!(
             block.data[0].load(Ordering::Relaxed),
-            (1_u64 << 0) | (1_u64 << 63)
+            1 | (1_u64 << (BITS_PER_WORD - 1))
         );
         assert_eq!(block.data[1].load(Ordering::Relaxed), 1);
-        assert_eq!(block.data[7].load(Ordering::Relaxed), 1_u64 << 63);
+        assert_eq!(
+            block.data[WORDS_PER_BLOCK - 1].load(Ordering::Relaxed),
+            1_u64 << (BITS_PER_WORD - 1)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "document index out of bounds")]
+    fn set_bit_out_of_bounds_panics() {
+        let beyond_boundary = std::panic::catch_unwind(|| {
+            AlignedSignatureBlock::default().set_bit(DOCS_PER_BLOCK + 10);
+        });
+        assert!(beyond_boundary.is_err());
+
+        AlignedSignatureBlock::default().set_bit(DOCS_PER_BLOCK);
     }
 }
