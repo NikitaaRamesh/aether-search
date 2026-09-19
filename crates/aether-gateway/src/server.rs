@@ -49,7 +49,7 @@ async fn handle_webhook(
 mod tests {
     use axum::{
         body::Body,
-        http::{Request, StatusCode},
+        http::{HeaderValue, Request, StatusCode},
     };
     use http_body_util::BodyExt;
     use tower::ServiceExt;
@@ -78,6 +78,47 @@ mod tests {
         let request = Request::builder()
             .method("POST")
             .uri("/webhook")
+            .body(Body::from(RFC_4231_BODY))
+            .expect("request must be valid");
+
+        assert_eq!(send_request(request).await, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn invalid_header_prefix_returns_bad_request() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhook")
+            .header(
+                SIGNATURE_HEADER,
+                "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+            )
+            .body(Body::from(RFC_4231_BODY))
+            .expect("request must be valid");
+
+        assert_eq!(send_request(request).await, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn malformed_hex_signature_returns_bad_request() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhook")
+            .header(SIGNATURE_HEADER, "sha256=invalid_hex_characters")
+            .body(Body::from(RFC_4231_BODY))
+            .expect("request must be valid");
+
+        assert_eq!(send_request(request).await, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn non_utf8_header_returns_bad_request() {
+        let signature =
+            HeaderValue::from_bytes(b"\xff\xfe").expect("opaque header value must be valid");
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhook")
+            .header(SIGNATURE_HEADER, signature)
             .body(Body::from(RFC_4231_BODY))
             .expect("request must be valid");
 
