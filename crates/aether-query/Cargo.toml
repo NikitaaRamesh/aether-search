@@ -1,0 +1,8 @@
+[package]
+name = "aether-query"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ahash.workspace = true
+aether-core = { path = "../aether-core" }

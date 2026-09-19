@@ -1,0 +1,12 @@
+[package]
+name = "aether-gateway"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+bytes.workspace = true
+axum.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+aether-core = { path = "../aether-core" }

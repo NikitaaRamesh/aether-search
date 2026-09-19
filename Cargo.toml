@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/aether-core",
+    "crates/aether-gateway",
+    "crates/aether-query",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+tokio = { version = "1.43", features = ["full"] }
+bytes = "1.10"
+parking_lot = "0.12"
+crossbeam-queue = "0.3"
+ahash = "0.8"
+hmac = "0.12"
+sha2 = "0.10"
+axum = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
