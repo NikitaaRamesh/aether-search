@@ -1,4 +1,7 @@
+pub mod crypto;
+
 pub use aether_core as core;
+pub use crypto::{VerificationError, verify_signature};
 
 pub type Body = bytes::Bytes;
 pub type HmacSha256 = hmac::Hmac<sha2::Sha256>;

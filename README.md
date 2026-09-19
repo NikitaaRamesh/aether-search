@@ -6,10 +6,11 @@ Aether Search is an analytical information retrieval engine built in Rust. It tr
 
 ## Architecture Milestones & Implementation Log
 
-### Phase 1: Systems Scaffolding
+### Phase 1: Systems Scaffolding & Webhook Ingestion
 - [x] **Workspace Initialization:** Established `aether-core`, `aether-gateway`, and `aether-query` crates.
 - [x] **Hardware Sympathy:** Enforced nightly toolchain and configured `+avx2` / `+avx512f` target features for the SIMD query engine.
 - [x] **Memory Constraints:** Bound release profile to thin LTO and a single codegen unit for predictable benchmarking.
-- [ ] **Zero-Copy Gateway:** Implement constant-time HMAC webhook verification and `BytesMut` HTTP payload slicing.
+- [x] **Constant-Time Ingress Verification:** Implemented zero-allocation HMAC-SHA256 signature validation with stack-decoded hex parsing over raw byte slices (RFC 4231 verified).
+- [ ] **Zero-Copy Payload Ingestion:** Extract event metadata and commit blobs from raw `Bytes` buffers without heap deserialization.
 - [ ] **Orthogonal Bit-Matrix:** Define `#[repr(align(64))]` Aligned Signature Blocks to eliminate false sharing.
 - [ ] **Scatter-Gather Execution:** Implement vectorized boolean intersections over the columnar bit-matrix.
