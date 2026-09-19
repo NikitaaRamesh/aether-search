@@ -103,7 +103,7 @@ mod tests {
         assert_eq!(align_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
         assert_eq!(size_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
         assert_eq!(
-            WORDS_PER_BLOCK * size_of::<std::sync::atomic::AtomicU64>(),
+            WORDS_PER_BLOCK * size_of::<u64>(),
             BLOCK_ALIGNMENT_BYTES,
             "Payload must perfectly fill the cache line without compiler padding"
         );
@@ -142,6 +142,7 @@ mod tests {
         assert_out_of_bounds_panic(beyond_boundary.unwrap_err());
     }
 
+    #[track_caller]
     fn assert_out_of_bounds_panic(payload: Box<dyn std::any::Any + Send>) {
         let message = payload
             .downcast_ref::<&str>()
