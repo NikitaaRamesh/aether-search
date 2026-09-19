@@ -102,6 +102,11 @@ mod tests {
     fn verify_memory_layout() {
         assert_eq!(align_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
         assert_eq!(size_of::<AlignedSignatureBlock>(), BLOCK_ALIGNMENT_BYTES);
+        assert_eq!(
+            WORDS_PER_BLOCK * size_of::<std::sync::atomic::AtomicU64>(),
+            BLOCK_ALIGNMENT_BYTES,
+            "Payload must perfectly fill the cache line without compiler padding"
+        );
     }
 
     #[test]
@@ -133,7 +138,17 @@ mod tests {
             AlignedSignatureBlock::default().set_bit(DOCS_PER_BLOCK + 10);
         });
 
-        assert!(at_boundary.is_err());
-        assert!(beyond_boundary.is_err());
+        assert_out_of_bounds_panic(at_boundary.unwrap_err());
+        assert_out_of_bounds_panic(beyond_boundary.unwrap_err());
+    }
+
+    fn assert_out_of_bounds_panic(payload: Box<dyn std::any::Any + Send>) {
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .expect("panic payload must be a string");
+
+        assert!(message.contains("out of bounds"));
     }
 }
