@@ -1,38 +1,34 @@
-/// A forward-only scanner over a borrowed webhook payload.
+/// A stateless zero-copy byte scanner over a borrowed webhook payload.
 pub struct PayloadScanner<'a> {
     payload: &'a [u8],
-    cursor: usize,
 }
 
 impl<'a> PayloadScanner<'a> {
     pub fn new(payload: &'a [u8]) -> Self {
-        Self { payload, cursor: 0 }
+        Self { payload }
     }
 
-    pub fn find_string_value(&mut self, exact_key: &[u8]) -> Option<&'a str> {
+    pub fn find_string_value(&self, exact_key: &[u8]) -> Option<&'a str> {
         if exact_key.is_empty() {
             return None;
         }
 
-        let remaining = self.payload.get(self.cursor..)?;
-        let key_offset = remaining
+        let key_offset = self
+            .payload
             .windows(exact_key.len())
             .position(|window| window == exact_key)?;
-        let value_start = self.cursor + key_offset + exact_key.len();
-        self.cursor = value_start;
+        let value_start = key_offset + exact_key.len();
 
         let value_length = self.payload[value_start..]
             .iter()
             .position(|byte| *byte == b'"')?;
         let value_end = value_start + value_length;
-        self.cursor = value_end + 1;
 
         std::str::from_utf8(&self.payload[value_start..value_end]).ok()
     }
 
-    pub fn extract_push_metadata(&mut self) -> Option<(&'a str, &'a str)> {
+    pub fn extract_push_metadata(&self) -> Option<(&'a str, &'a str)> {
         let repository = self.find_string_value(b"\"full_name\":\"")?;
-        self.cursor = 0;
         let commit_sha = self.find_string_value(b"\"after\":\"")?;
 
         Some((repository, commit_sha))
@@ -50,7 +46,7 @@ mod tests {
 
     #[test]
     fn extracts_valid_metadata() {
-        let mut scanner = PayloadScanner::new(MOCK_PUSH_PAYLOAD);
+        let scanner = PayloadScanner::new(MOCK_PUSH_PAYLOAD);
 
         assert_eq!(
             scanner.extract_push_metadata(),
@@ -64,7 +60,7 @@ mod tests {
             "after":"a1b2c3d4e5f6",
             "repository":{"full_name":"NikitaaRamesh/aether-search"}
         }"#;
-        let mut scanner = PayloadScanner::new(payload);
+        let scanner = PayloadScanner::new(payload);
 
         assert_eq!(
             scanner.extract_push_metadata(),
@@ -74,14 +70,14 @@ mod tests {
 
     #[test]
     fn handles_missing_keys() {
-        let mut scanner = PayloadScanner::new(br#"{"ref":"refs/heads/main"}"#);
+        let scanner = PayloadScanner::new(br#"{"ref":"refs/heads/main"}"#);
 
         assert_eq!(scanner.extract_push_metadata(), None);
     }
 
     #[test]
     fn handles_truncated_payload() {
-        let mut scanner = PayloadScanner::new(
+        let scanner = PayloadScanner::new(
             br#"{"repository":{"full_name":"NikitaaRamesh/aether-search"},"after":"a1b2c3d4e5f6"#,
         );
 
