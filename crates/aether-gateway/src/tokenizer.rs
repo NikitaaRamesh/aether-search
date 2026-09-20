@@ -32,6 +32,7 @@ impl<'a> PayloadScanner<'a> {
 
     pub fn extract_push_metadata(&mut self) -> Option<(&'a str, &'a str)> {
         let repository = self.find_string_value(b"\"full_name\":\"")?;
+        self.cursor = 0;
         let commit_sha = self.find_string_value(b"\"after\":\"")?;
 
         Some((repository, commit_sha))
@@ -50,6 +51,20 @@ mod tests {
     #[test]
     fn extracts_valid_metadata() {
         let mut scanner = PayloadScanner::new(MOCK_PUSH_PAYLOAD);
+
+        assert_eq!(
+            scanner.extract_push_metadata(),
+            Some(("NikitaaRamesh/aether-search", "a1b2c3d4e5f6"))
+        );
+    }
+
+    #[test]
+    fn handles_unordered_keys() {
+        let payload = br#"{
+            "after":"a1b2c3d4e5f6",
+            "repository":{"full_name":"NikitaaRamesh/aether-search"}
+        }"#;
+        let mut scanner = PayloadScanner::new(payload);
 
         assert_eq!(
             scanner.extract_push_metadata(),
