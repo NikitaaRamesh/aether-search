@@ -1,5 +1,6 @@
 pub mod crypto;
 pub mod server;
+pub mod tokenizer;
 
 pub use aether_core as core;
 pub use crypto::{VerificationError, verify_signature};

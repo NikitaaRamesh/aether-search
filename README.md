@@ -13,5 +13,5 @@ Aether Search is an analytical information retrieval engine built in Rust. It tr
 - [x] **Constant-Time Ingress Verification:** Implemented zero-allocation HMAC-SHA256 signature validation with stack-decoded hex parsing over raw byte slices (RFC 4231 verified).
 - [x] **Zero-Copy HTTP Gateway:** Constructed Tokio/Axum asynchronous routing layer that consumes contiguous `Bytes` buffers without heap-allocated JSON deserialization; hardened with exhaustive 400/401/202 branch test coverage.
 - [x] **Orthogonal Bit-Matrix Core:** Defined `#[repr(align(64))]` Aligned Signature Blocks to eliminate false sharing, parameterized memory geometry constants, and implemented lock-free `AtomicU64` mutation with documented relaxed memory semantics.
-- [ ] **Structural Tokenizer:** Implement a zero-copy state machine to parse structural anchors from the raw webhook payload.
+- [x] **Structural Tokenizer:** Implemented a zero-copy state machine (`PayloadScanner`) to slide over raw webhook bytes, extracting string slices for repository targets and commit SHAs without heap-allocated JSON deserialization.
 - [ ] **Scatter-Gather Execution:** Implement vectorized boolean intersections over the columnar bit-matrix.
