@@ -93,6 +93,7 @@ impl IndexShard {
             return Vec::new();
         }
 
+        let active_count = self.active_docs.load(Ordering::Acquire) as usize;
         let mut result = [u64::MAX; WORDS_PER_BLOCK];
         for row_idx in term_rows {
             if *row_idx >= self.rows.len() {
@@ -104,7 +105,6 @@ impl IndexShard {
             }
         }
 
-        let active_count = self.active_docs.load(Ordering::Acquire) as usize;
         let mut matches = Vec::new();
         for (word_idx, mut word) in result.into_iter().enumerate() {
             while word != 0 {
