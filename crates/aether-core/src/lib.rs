@@ -84,6 +84,36 @@ impl IndexShard {
             active_docs: AtomicU16::new(0),
         }
     }
+
+    #[allow(clippy::needless_range_loop)]
+    pub fn match_documents(&self, term_rows: &[usize]) -> Vec<String> {
+        if term_rows.is_empty() {
+            return Vec::new();
+        }
+
+        let mut result = [u64::MAX; WORDS_PER_BLOCK];
+        for row_idx in term_rows {
+            for i in 0..WORDS_PER_BLOCK {
+                result[i] &= self.rows[*row_idx].data[i].load(Ordering::Relaxed);
+            }
+        }
+
+        let manifest = self.doc_manifest.read();
+        let mut matches = Vec::new();
+        for (word_idx, mut word) in result.into_iter().enumerate() {
+            while word != 0 {
+                let bit_pos = word.trailing_zeros() as usize;
+                let doc_idx = (word_idx * BITS_PER_WORD) + bit_pos;
+                word &= word - 1;
+
+                if let Some(doc) = manifest.get(doc_idx) {
+                    matches.push(doc.clone());
+                }
+            }
+        }
+
+        matches
+    }
 }
 
 #[cfg(test)]
@@ -94,7 +124,7 @@ mod tests {
     };
 
     use super::{
-        AlignedSignatureBlock, BITS_PER_WORD, BLOCK_ALIGNMENT_BYTES, DOCS_PER_BLOCK,
+        AlignedSignatureBlock, BITS_PER_WORD, BLOCK_ALIGNMENT_BYTES, DOCS_PER_BLOCK, IndexShard,
         WORDS_PER_BLOCK,
     };
 
@@ -140,6 +170,28 @@ mod tests {
 
         assert_out_of_bounds_panic(at_boundary.unwrap_err());
         assert_out_of_bounds_panic(beyond_boundary.unwrap_err());
+    }
+
+    #[test]
+    fn test_simd_intersection() {
+        let shard = IndexShard::new(10);
+        shard
+            .doc_manifest
+            .write()
+            .extend(["repo-A".to_owned(), "repo-B".to_owned()]);
+
+        shard.rows[2].set_bit(0);
+        shard.rows[5].set_bit(0);
+
+        shard.rows[2].set_bit(1);
+        shard.rows[5].set_bit(1);
+        shard.rows[8].set_bit(1);
+
+        assert_eq!(
+            shard.match_documents(&[2, 5]),
+            ["repo-A".to_owned(), "repo-B".to_owned()]
+        );
+        assert_eq!(shard.match_documents(&[2, 5, 8]), ["repo-B".to_owned()]);
     }
 
     #[track_caller]
