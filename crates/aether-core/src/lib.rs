@@ -102,13 +102,18 @@ impl IndexShard {
             }
         }
 
+        let active_count = self.active_docs.load(Ordering::Acquire) as usize;
         let mut matches = Vec::new();
         for (word_idx, mut word) in result.into_iter().enumerate() {
             while word != 0 {
                 let bit_pos = word.trailing_zeros() as usize;
                 let doc_idx = (word_idx * BITS_PER_WORD) + bit_pos;
-                word &= word - 1;
+
+                if doc_idx >= active_count {
+                    return matches;
+                }
                 matches.push(doc_idx);
+                word &= word - 1;
             }
         }
 
@@ -182,6 +187,7 @@ mod tests {
         shard.rows[2].set_bit(1);
         shard.rows[5].set_bit(1);
         shard.rows[8].set_bit(1);
+        shard.active_docs.store(2, Ordering::Release);
 
         assert_eq!(shard.match_documents(&[2, 5]), vec![0, 1]);
         assert_eq!(shard.match_documents(&[2, 5, 8]), vec![1]);
@@ -199,6 +205,16 @@ mod tests {
         let shard = IndexShard::new(10);
 
         assert_eq!(shard.match_documents(&[10]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn match_documents_stops_at_active_count() {
+        let shard = IndexShard::new(1);
+        shard.rows[0].set_bit(0);
+        shard.rows[0].set_bit(2);
+        shard.active_docs.store(1, Ordering::Release);
+
+        assert_eq!(shard.match_documents(&[0]), vec![0]);
     }
 
     #[track_caller]
