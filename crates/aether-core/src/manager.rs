@@ -60,7 +60,7 @@ impl IndexManager {
                     .store((local_idx + 1) as u16, Ordering::Release);
                 drop(manifest);
 
-                for row in term_rows {
+                for row in term_rows.iter().filter(|&&r| r < shard.rows.len()) {
                     shard.rows[*row].set_bit(local_idx);
                 }
                 break;
@@ -73,7 +73,7 @@ impl IndexManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, atomic::Ordering};
 
     use super::IndexManager;
 
@@ -89,5 +89,40 @@ mod tests {
         assert_eq!(shards.len(), 2);
         assert_eq!(shards[0].active_docs.load(Ordering::Acquire), 512);
         assert_eq!(shards[1].active_docs.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn test_concurrent_ingestion() {
+        let manager = Arc::new(IndexManager::new(10));
+        let mut handles = Vec::with_capacity(10);
+
+        for thread_id in 0..10 {
+            let manager = Arc::clone(&manager);
+            handles.push(std::thread::spawn(move || {
+                for document_id in 0..100 {
+                    manager.add_document(format!("doc-{thread_id}-{document_id}"), &[1, 5]);
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().expect("ingestion thread must not panic");
+        }
+
+        let shards = manager.shards.read();
+        assert_eq!(shards.len(), 2);
+        assert_eq!(shards[0].active_docs.load(Ordering::Acquire), 512);
+        assert_eq!(shards[1].active_docs.load(Ordering::Acquire), 488);
+    }
+
+    #[test]
+    fn test_invalid_term_rows_are_ignored() {
+        let manager = IndexManager::new(10);
+
+        manager.add_document("doc".to_owned(), &[1, 10, usize::MAX, 5]);
+
+        let shards = manager.shards.read();
+        assert_eq!(shards[0].active_docs.load(Ordering::Acquire), 1);
+        assert_eq!(shards[0].match_documents(&[1, 5]), vec![0]);
     }
 }
