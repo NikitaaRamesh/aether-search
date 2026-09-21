@@ -144,6 +144,7 @@ mod tests {
 
             for i in 0..1000 {
                 writer_manager.add_document(format!("doc-{i}"), &[2, 3]);
+                std::thread::yield_now();
             }
         });
 
