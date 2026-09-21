@@ -4,6 +4,11 @@ use parking_lot::RwLock;
 
 use crate::{DOCS_PER_BLOCK, IndexShard};
 
+const _: () = assert!(
+    crate::DOCS_PER_BLOCK <= u16::MAX as usize,
+    "DOCS_PER_BLOCK must fit within a 16-bit unsigned integer"
+);
+
 pub struct IndexManager {
     shards: RwLock<Vec<Arc<IndexShard>>>,
     num_rows: usize,
@@ -55,14 +60,15 @@ impl IndexManager {
 
             if local_idx < DOCS_PER_BLOCK {
                 manifest.push(doc_name);
-                shard
-                    .active_docs
-                    .store((local_idx + 1) as u16, Ordering::Release);
-                drop(manifest);
 
                 for row in term_rows.iter().filter(|&&r| r < shard.rows.len()) {
                     shard.rows[*row].set_bit(local_idx);
                 }
+
+                shard
+                    .active_docs
+                    .store((local_idx + 1) as u16, Ordering::Release);
+                drop(manifest);
                 break;
             }
 
