@@ -1,4 +1,5 @@
 pub mod manager;
+pub mod vocab;
 
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 
