@@ -43,12 +43,12 @@ impl VocabularyMap {
     {
         let mut rows = Vec::new();
         for token in tokens {
-            if let Some(row_idx) = self.get_or_register(token)
-                && !rows.contains(&row_idx)
-            {
+            if let Some(row_idx) = self.get_or_register(token) {
                 rows.push(row_idx);
             }
         }
+        rows.sort_unstable();
+        rows.dedup();
         rows
     }
 }
@@ -82,5 +82,14 @@ mod tests {
 
         assert_eq!(rows.len(), 2);
         assert_eq!(rows, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_map_tokens_hits_capacity() {
+        let vocabulary = VocabularyMap::new(1);
+
+        let rows = vocabulary.map_tokens_to_rows(["token1", "token2", "token1"]);
+
+        assert_eq!(rows, vec![0]);
     }
 }
