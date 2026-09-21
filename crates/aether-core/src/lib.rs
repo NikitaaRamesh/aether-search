@@ -1,3 +1,5 @@
+pub mod manager;
+
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 
 use parking_lot::RwLock;
