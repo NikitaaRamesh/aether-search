@@ -1,3 +1,4 @@
+pub mod lexer;
 pub mod manager;
 pub mod vocab;
 
