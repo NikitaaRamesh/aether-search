@@ -18,6 +18,19 @@ impl IndexManager {
     }
 
     fn get_active_shard(&self) -> Arc<IndexShard> {
+        {
+            let shards = self.shards.read();
+            let active_shard = Arc::clone(
+                shards
+                    .last()
+                    .expect("index manager must contain at least one shard"),
+            );
+
+            if active_shard.active_docs.load(Ordering::Acquire) < DOCS_PER_BLOCK as u16 {
+                return active_shard;
+            }
+        }
+
         let mut shards = self.shards.write();
         let active_shard = Arc::clone(
             shards
@@ -37,17 +50,23 @@ impl IndexManager {
     pub fn add_document(&self, doc_name: String, term_rows: &[usize]) {
         loop {
             let shard = self.get_active_shard();
-            let local_idx = shard.active_docs.fetch_add(1, Ordering::AcqRel);
+            let mut manifest = shard.doc_manifest.write();
+            let local_idx = manifest.len();
 
-            if local_idx < DOCS_PER_BLOCK as u16 {
-                shard.doc_manifest.write().push(doc_name);
+            if local_idx < DOCS_PER_BLOCK {
+                manifest.push(doc_name);
+                shard
+                    .active_docs
+                    .store((local_idx + 1) as u16, Ordering::Release);
+                drop(manifest);
+
                 for row in term_rows {
-                    shard.rows[*row].set_bit(local_idx as usize);
+                    shard.rows[*row].set_bit(local_idx);
                 }
                 break;
             }
 
-            let _ = shard.active_docs.fetch_sub(1, Ordering::Relaxed);
+            drop(manifest);
         }
     }
 }
