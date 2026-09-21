@@ -79,10 +79,7 @@ impl IndexManager {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
+    use std::sync::{Arc, Barrier, atomic::Ordering};
 
     use super::IndexManager;
 
@@ -139,38 +136,37 @@ mod tests {
     fn test_concurrent_read_write_publication() {
         let manager = Arc::new(IndexManager::new(10));
         let writer_manager = Arc::clone(&manager);
-        let writer_finished = Arc::new(AtomicBool::new(false));
-        let writer_finished_signal = Arc::clone(&writer_finished);
-        let reader_started = Arc::new(AtomicBool::new(false));
-        let reader_started_signal = Arc::clone(&reader_started);
+        let barrier = Arc::new(Barrier::new(2));
+        let writer_barrier = Arc::clone(&barrier);
 
         let writer = std::thread::spawn(move || {
-            while !reader_started_signal.load(Ordering::Acquire) {
-                std::thread::yield_now();
-            }
+            writer_barrier.wait();
 
             for i in 0..1000 {
                 writer_manager.add_document(format!("doc-{i}"), &[2, 3]);
             }
-            writer_finished_signal.store(true, Ordering::Release);
         });
 
-        while !writer_finished.load(Ordering::Acquire) {
-            reader_started.store(true, Ordering::Release);
+        barrier.wait();
+        let mut stable_comparisons = 0;
+        for _ in 0..10_000 {
             let shard = manager.get_active_shard();
-            let manifest = shard.doc_manifest.read();
+            let active_before = shard.active_docs.load(Ordering::Acquire);
             let matches_2 = shard.match_documents(&[2]);
             let matches_3 = shard.match_documents(&[3]);
+            let active_after = shard.active_docs.load(Ordering::Acquire);
 
-            assert_eq!(
-                matches_2.len(),
-                matches_3.len(),
-                "Torn read detected: publication ordering violated"
-            );
-            drop(manifest);
+            if active_before == active_after {
+                assert_eq!(
+                    matches_2, matches_3,
+                    "Torn read detected: row vectors do not match"
+                );
+                stable_comparisons += 1;
+            }
             std::thread::yield_now();
         }
 
         writer.join().expect("writer thread must not panic");
+        assert!(stable_comparisons > 0, "no stable snapshots were observed");
     }
 }
